@@ -6,11 +6,13 @@ from IPython.display import Image, display
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langchain_anthropic import ChatAnthropic
+from langchain_community.tools.tavily_search import TavilySearchResults
 
 
 
 # Load environment variables from .env file
 load_dotenv()
+
 
 class State(TypedDict):
      # Messages have the type "list". The `add_messages` function
@@ -20,15 +22,17 @@ class State(TypedDict):
 
 
 
-
 def main():
     def chatbot(state: State):
         return {
-            "messages": [llm.invoke(state["messages"])]
-        } 
+            "messages": [llm_with_tool.invoke(state["messages"])]
+        }
     
     graph_builder = StateGraph(State)
     llm = ChatAnthropic(model="claude-3-5-haiku-20241022")
+    tool = TavilySearchResults(max_results=2)
+    tools = [tool]
+    llm_with_tool = llm.bind_tool(tools)
     # The first argument is the unique node name
     # The second argument is the function or object that will be called whenever
     # the node is used.
