@@ -5,6 +5,7 @@ from IPython.display import Image, display
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_anthropic import ChatAnthropic
 from langchain_community.tools.tavily_search import TavilySearchResults
@@ -34,6 +35,8 @@ def main():
     llm = ChatAnthropic(model="claude-3-5-haiku-20241022")
     tool = TavilySearchResults(max_results=2)
     tools = [tool]
+    # change this to use SqliteSaver or PostgresSaver and connect to your own DB
+    memory = MemorySaver()
     llm_with_tool = llm.bind_tools(tools)
     # The first argument is the unique node name
     # The second argument is the function or object that will be called whenever
@@ -50,10 +53,13 @@ def main():
     )
     # Any time a tool is called, we return to the chatbot to decide the next step
     graph_builder.add_edge("tools", "chatbot")
-    graph = graph_builder.compile()
+    graph = graph_builder.compile(checkpointer=memory)
     
-    def stream_graph_updates(user_input: str):
-        for event in graph.stream({"messages": [{"role": "user", "content": user_input}]}):
+    def stream_graph_updates(user_input: str, config: dict):
+        for event in graph.stream(
+            {"messages": [{"role": "user", "content": user_input}]},
+            config=config
+        ):
             for value in event.values():
                 print("Assistant:", value["messages"][-1].content)
                 
@@ -69,19 +75,25 @@ def main():
     except Exception:
         # This requires some extra dependencies and is optional
         pass
-    
+    # Learning how to use LLM memory
+    # Pick a thread ID to remember the conversation
+    config = {
+        "configurable": {
+            "thread_id": "1"
+        }
+    }
     while True:
         try:
             user_input = input("User: ")
             if user_input.lower() in ["quit", "exit", "q"]:
                 print("Goodbye!")
                 break
-            stream_graph_updates(user_input)
+            stream_graph_updates(user_input, config=config)
         except:
             # fallback if input() is not available
             user_input = "What do you know about LangGraph?"
             print("User: " + user_input)
-            stream_graph_updates(user_input)
+            stream_graph_updates(user_input, config=config)
             break
     
 
