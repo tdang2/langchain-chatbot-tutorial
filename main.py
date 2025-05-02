@@ -5,6 +5,7 @@ from IPython.display import Image, display
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_anthropic import ChatAnthropic
 from langchain_community.tools.tavily_search import TavilySearchResults
 
@@ -23,24 +24,6 @@ class State(TypedDict):
     messages: Annotated[list, add_messages]
 
 
-def route_tools(
-    state: State,
-):
-    """
-    Use in the conditional_edge to route to the ToolNode if the last message
-    has tool calls. Otherwise, route to the end.
-    """
-    if isinstance(state, list):
-        ai_message = state[-1]
-    elif messages := state.get("messages", []):
-        ai_message = messages[-1]
-    else:
-        raise ValueError(f"No messages found in input state to tool_edge: {state}")
-    if hasattr(ai_message, "tool_calls") and len(ai_message.tool_calls) > 0:
-        return "tools"
-    return END
-
-
 def main():
     def chatbot(state: State):
         return {
@@ -56,20 +39,14 @@ def main():
     # The second argument is the function or object that will be called whenever
     # the node is used.
     graph_builder.add_node("chatbot", chatbot)
-    graph_builder.add_edge(START, "chatbot")
-    tool_node = BasicToolNode(tools=[tool])
+    graph_builder.set_entry_point("chatbot")
+    tool_node = ToolNode(tools=[tool])
     graph_builder.add_node("tools", tool_node)
     # The `tools_condition` function returns "tools" if the chatbot asks to use a tool, and "END" if
     # it is fine directly responding. This conditional routing defines the main agent loop.
     graph_builder.add_conditional_edges(
         "chatbot",
-        route_tools,
-        # The following dictionary lets you tell the graph to interpret the condition's outputs as a specific node
-        # It defaults to the identity function, but if you
-        # want to use a node named something else apart from "tools",
-        # You can update the value of the dictionary to something else
-        # e.g., "tools": "my_tools"
-        {"tools": "tools", END: END},
+        tools_condition
     )
     # Any time a tool is called, we return to the chatbot to decide the next step
     graph_builder.add_edge("tools", "chatbot")
@@ -81,7 +58,14 @@ def main():
                 print("Assistant:", value["messages"][-1].content)
                 
     try:
-        display(Image(graph.get_graph().draw_mermaid_png()))
+        # Generate the graph visualization as PNG bytes
+        graph_png_data = graph.get_graph().draw_mermaid_png()
+        img = Image(graph_png_data)
+        output_filename = "graph_visualization.png"
+        # Save the image data to a file
+        with open(output_filename, "wb") as f:
+            f.write(img.data) # Access the raw byte data from the Image object
+        print(f"Graph visualization saved to {output_filename}")
     except Exception:
         # This requires some extra dependencies and is optional
         pass
